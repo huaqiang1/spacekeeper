@@ -1,7 +1,7 @@
 name: wake-farm
 on:
   schedule:
-    - cron: "0 21 * * *"
+    - cron: "50 3 * * *"
   workflow_dispatch:
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
           SPACE_KEY: fwwydr
       - name: hold then stop
-        run: node spacectl.mjs hold 100
+        run: node spacectl.mjs hold 110
         env:
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
