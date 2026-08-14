@@ -1,7 +1,7 @@
 name: wake-autosign
 on:
   schedule:
-    - cron: "0 7 * * *"
+    - cron: "50 7 * * *"
   workflow_dispatch:
 
 jobs:
@@ -15,8 +15,8 @@ jobs:
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
           SPACE_KEY: fwwydr
-      - name: hold then stop
-        run: node spacectl.mjs hold 110
+      - name: window guard
+        run: node spacectl.mjs guard 12
         env:
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}

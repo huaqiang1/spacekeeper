@@ -104,6 +104,22 @@ async function main() {
     await sleep(mins * 60 * 1000);
     await apiCall("StopWorkspace", { SpaceKey: SPACE_KEY });
     console.log("stopped");
+  } else if (cmd === "guard") {
+    // Cloud Studio 空闲停机: 无人连接 IDE 时约 15 分钟自动停止.
+    // guard: 在停机前轮询状态; 若任务窗口内被自动停机则尝试重启 (补偿至窗口结束).
+    const mins = parseInt(arg || "12", 10);
+    const deadline = Date.now() + mins * 60 * 1000;
+    console.log(`guarding ${mins} minutes until ${new Date(deadline).toISOString()}...`);
+    while (Date.now() < deadline) {
+      const st = await workspaceStatus();
+      if (st !== "RUNNING" && st !== "READY") {
+        console.log(`${new Date().toISOString()} detected ${st}, restarting...`);
+        await apiCall("RunWorkspace", { SpaceKey: SPACE_KEY });
+        await waitReady(5 * 60 * 1000);
+      }
+      await sleep(60 * 1000);
+    }
+    console.log("guard window done");
   } else if (cmd === "stop") {
     await apiCall("StopWorkspace", { SpaceKey: SPACE_KEY });
     console.log("stopped");
