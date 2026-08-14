@@ -1,0 +1,23 @@
+name: wake-autosign
+on:
+  schedule:
+    - cron: "50 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: start workspace
+        run: node spacectl.mjs start
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          SPACE_KEY: fwwydr
+      - name: hold then stop
+        run: node spacectl.mjs hold 110
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          SPACE_KEY: fwwydr
