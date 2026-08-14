@@ -1,7 +1,8 @@
 name: wake-farm
 on:
   schedule:
-    - cron: "50 4 * * *"
+    - cron: "0 4 * * *"
+    - cron: "30 4 * * *"
   workflow_dispatch:
 
 jobs:
@@ -16,7 +17,7 @@ jobs:
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
           SPACE_KEY: fwwydr
       - name: window guard
-        run: node spacectl.mjs guard 12
+        run: node spacectl.mjs guard-until "05:25"
         env:
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}

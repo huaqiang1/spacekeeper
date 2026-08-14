@@ -120,13 +120,34 @@ async function main() {
       await sleep(60 * 1000);
     }
     console.log("guard window done");
+  } else if (cmd === "guard-until") {
+    // 守卫空间在线直到指定 UTC 时刻 (arg 形如 "05:25"); 期间若被空闲停机则自动重启补偿.
+    const [hh, mm] = (arg || "").split(":").map(Number);
+    if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+      console.error('usage: guard-until "HH:MM" (UTC)');
+      process.exit(2);
+    }
+    const now = new Date();
+    let deadline = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hh, mm, 0);
+    if (deadline <= Date.now()) deadline += 24 * 3600 * 1000;
+    console.log(`guarding until ${new Date(deadline).toISOString()}...`);
+    while (Date.now() < deadline) {
+      const st = await workspaceStatus();
+      if (st !== "RUNNING" && st !== "READY") {
+        console.log(`${new Date().toISOString()} detected ${st}, restarting...`);
+        await apiCall("RunWorkspace", { SpaceKey: SPACE_KEY });
+        await waitReady(5 * 60 * 1000);
+      }
+      await sleep(60 * 1000);
+    }
+    console.log("guard window done");
   } else if (cmd === "stop") {
     await apiCall("StopWorkspace", { SpaceKey: SPACE_KEY });
     console.log("stopped");
   } else if (cmd === "status") {
     console.log(`status=${await workspaceStatus()}`);
   } else {
-    console.error("usage: node spacectl.mjs <start|hold <mins>|stop|status>");
+    console.error("usage: node spacectl.mjs <start|guard <mins>|guard-until \"HH:MM\"|stop|status>");
     process.exit(2);
   }
 }
