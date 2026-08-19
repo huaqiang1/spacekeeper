@@ -85,10 +85,10 @@ jobs:
                   log(f"[gen] t={time.time()-t0:.0f}s safetensors read {fp.split('/')[-1]}")
               model.load_state_dict(state, strict=True)
               log(f"[gen] t={time.time()-t0:.0f}s {tag} loaded")
-          tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
+          tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json", torch_dtype=torch.float16)
           load_sf(["/content/wan/transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
                    "/content/wan/transformer/diffusion_pytorch_model-00002-of-00002.safetensors"], tr, "transformer")
-          vae = AutoencoderKLWan.from_config("/content/wan/vae/config.json")
+          vae = AutoencoderKLWan.from_config("/content/wan/vae/config.json", torch_dtype=torch.float16)
           load_sf(["/content/wan/vae/diffusion_pytorch_model.safetensors"], vae, "vae")
           sch = UniPCMultistepScheduler.from_pretrained("/content/wan/scheduler")
           log(f"[gen] t={time.time()-t0:.0f}s scheduler loaded")
