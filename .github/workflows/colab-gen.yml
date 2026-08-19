@@ -1,0 +1,68 @@
+name: colab-gen
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Video prompt"
+        required: false
+        default: "a cute orange cat walking through a sunny meadow, cinematic lighting, high quality, 4k detail"
+
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install colab cli
+        run: pip install google-colab-cli "jupyter-kernel-client==0.15.0"
+      - name: write ADC
+        env:
+          GOOGLE_ADC_B64: ${{ secrets.GOOGLE_ADC_B64 }}
+        run: |
+          mkdir -p ~/.config/gcloud
+          echo "$GOOGLE_ADC_B64" | base64 -d > ~/.config/gcloud/application_default_credentials.json
+      - name: build gen script
+        env:
+          PROMPT: ${{ github.event.inputs.prompt }}
+        run: |
+          python - <<'PY'
+          import json, os
+          prompt = os.environ.get("PROMPT", "a cute orange cat walking through a sunny meadow")
+          gen = '''import torch, os, time
+          t0 = time.time()
+          from diffusers import WanPipeline
+          from diffusers.utils import export_to_video
+          print("[gen] loading Wan2.1-T2V-1.3B...")
+          pipe = WanPipeline.from_pretrained("Wan-AI/Wan2.1-T2V-1.3B", torch_dtype=torch.float16)
+          pipe.to("cuda")
+          print(f"[gen] model loaded in {time.time()-t0:.0f}s")
+          prompt = %s
+          neg = "bright, low quality, watermark, text, jpeg artifacts"
+          print("[gen] generating...")
+          out = pipe(prompt=prompt, negative_prompt=neg, num_frames=81, height=480, width=832, num_inference_steps=30, guidance_scale=5.0).frames[0]
+          export_to_video(out, "/content/out.mp4", fps=16)
+          print(f"[gen] DONE in {time.time()-t0:.0f}s, size={os.path.getsize('/content/out.mp4')}")
+          print("OUTPUT_FILE=/content/out.mp4")
+          ''' % json.dumps(prompt)
+          open("gen.py", "w").write(gen)
+          print("gen.py written")
+          PY
+      - name: create T4 session
+        run: colab --auth adc new -s gen --gpu T4
+      - name: run generation
+        run: colab --auth adc exec -s gen -f gen.py --timeout 1800 2>&1 | tail -40
+      - name: download result
+        run: |
+          colab --auth adc download -s gen /content/out.mp4 out.mp4
+          ls -la out.mp4
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-output
+          path: out.mp4
+      - name: teardown session
+        if: always()
+        run: colab --auth adc stop -s gen || true
