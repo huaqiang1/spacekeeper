@@ -15,11 +15,11 @@ jobs:
         run: pip install google-colab-cli
       - name: write ADC
         env:
-          GOOGLE_ADC: ${{ secrets.GOOGLE_ADC }}
+          GOOGLE_ADC_B64: ${{ secrets.GOOGLE_ADC_B64 }}
         run: |
           mkdir -p ~/.config/gcloud
-          echo "$GOOGLE_ADC" > ~/.config/gcloud/application_default_credentials.json
-          python -c "import json,os; d=json.load(open(os.path.expanduser('~/.config/gcloud/application_default_credentials.json'))); print('ADC JSON OK, client:', d['client_id'][:20], 'refresh:', d['refresh_token'][:8])"
+          echo "$GOOGLE_ADC_B64" | base64 -d > ~/.config/gcloud/application_default_credentials.json
+          python -c "import json,os; d=json.load(open(os.path.expanduser('~/.config/gcloud/application_default_credentials.json'))); print('ADC JSON OK, refresh:', d['refresh_token'][:12])"
       - name: smoke test
         run: |
           set +e
