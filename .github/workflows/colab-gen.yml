@@ -53,15 +53,18 @@ jobs:
               "vae/config.json", "vae/diffusion_pytorch_model.safetensors",
           ]
           def dl(f):
-              req = urllib.request.Request(BASE + f, headers={"User-Agent": "Mozilla/5.0"})
-              d = urllib.request.urlopen(req, timeout=300, context=ctx).read()
               p = "/content/wan/" + f
               os.makedirs(os.path.dirname(p), exist_ok=True)
-              open(p, "wb").write(d)
-              log(f"[gen] t={time.time()-t0:.0f}s DL {f} {len(d)//1048576}MB")
-          log(f"[gen] t={time.time()-t0:.0f}s downloading {len(FILES)} files...")
-          with concurrent.futures.ThreadPoolExecutor(6) as ex:
-              list(ex.map(dl, FILES))
+              for a in range(3):
+                  r = subprocess.run(["curl", "-sL", "--retry", "5", "--retry-delay", "2", "--connect-timeout", "30", "-o", p, BASE + f], timeout=600)
+                  if r.returncode == 0 and os.path.getsize(p) > 0:
+                      log(f"[gen] t={time.time()-t0:.0f}s DL {f} {os.path.getsize(p)//1048576}MB")
+                      return
+                  log(f"[gen] t={time.time()-t0:.0f}s DL RETRY {f}")
+          import subprocess
+          log(f"[gen] t={time.time()-t0:.0f}s downloading {len(FILES)} files (curl serial)...")
+          for f in FILES:
+              dl(f)
           log(f"[gen] t={time.time()-t0:.0f}s all files downloaded")
           from diffusers import WanPipeline
           from diffusers.utils import export_to_video
