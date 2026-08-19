@@ -31,21 +31,25 @@ jobs:
           python - <<'PY'
           import json, os
           prompt = os.environ.get("PROMPT", "a cute orange cat walking through a sunny meadow")
-          gen = '''import torch, os, time
+          gen = '''import torch, os, time, sys
+          def log(m):
+              print(m, flush=True)
           t0 = time.time()
+          log(f"[gen] t={time.time()-t0:.0f}s start, torch={torch.__version__}, cuda={torch.cuda.is_available()}")
           from diffusers import WanPipeline
           from diffusers.utils import export_to_video
-          print("[gen] loading Wan2.1-T2V-1.3B...")
+          log(f"[gen] t={time.time()-t0:.0f}s diffusers imported")
           pipe = WanPipeline.from_pretrained("Wan-AI/Wan2.1-T2V-1.3B-Diffusers", torch_dtype=torch.float16)
+          log(f"[gen] t={time.time()-t0:.0f}s model downloaded+loaded")
           pipe.to("cuda")
-          print(f"[gen] model loaded in {time.time()-t0:.0f}s")
+          log(f"[gen] t={time.time()-t0:.0f}s moved to cuda")
           prompt = %s
           neg = "bright, low quality, watermark, text, jpeg artifacts"
-          print("[gen] generating...")
+          log(f"[gen] t={time.time()-t0:.0f}s generating...")
           out = pipe(prompt=prompt, negative_prompt=neg, num_frames=49, height=384, width=672, num_inference_steps=20, guidance_scale=5.0).frames[0]
           export_to_video(out, "/content/out.mp4", fps=16)
-          print(f"[gen] DONE in {time.time()-t0:.0f}s, size={os.path.getsize('/content/out.mp4')}")
-          print("OUTPUT_FILE=/content/out.mp4")
+          log(f"[gen] DONE t={time.time()-t0:.0f}s size={os.path.getsize('/content/out.mp4')}")
+          print("OUTPUT_FILE=/content/out.mp4", flush=True)
           ''' % json.dumps(prompt)
           open("gen.py", "w").write(gen)
           print("gen.py written")
