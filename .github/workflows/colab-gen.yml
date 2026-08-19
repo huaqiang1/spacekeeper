@@ -36,7 +36,7 @@ jobs:
           from diffusers import WanPipeline
           from diffusers.utils import export_to_video
           print("[gen] loading Wan2.1-T2V-1.3B...")
-          pipe = WanPipeline.from_pretrained("Wan-AI/Wan2.1-T2V-1.3B", torch_dtype=torch.float16)
+          pipe = WanPipeline.from_pretrained("Wan-AI/Wan2.1-T2V-1.3B-Diffusers", torch_dtype=torch.float16)
           pipe.to("cuda")
           print(f"[gen] model loaded in {time.time()-t0:.0f}s")
           prompt = %s
@@ -53,7 +53,9 @@ jobs:
       - name: create T4 session
         run: colab --auth adc new -s gen --gpu T4
       - name: run generation
-        run: colab --auth adc exec -s gen -f gen.py --timeout 1800 2>&1 | tail -40
+        run: |
+          set -o pipefail
+          colab --auth adc exec -s gen -f gen.py --timeout 1800 2>&1 | tail -60
       - name: download result
         run: |
           colab --auth adc download -s gen /content/out.mp4 out.mp4
