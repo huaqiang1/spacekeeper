@@ -42,7 +42,7 @@ jobs:
           prompt = %s
           neg = "bright, low quality, watermark, text, jpeg artifacts"
           print("[gen] generating...")
-          out = pipe(prompt=prompt, negative_prompt=neg, num_frames=81, height=480, width=832, num_inference_steps=30, guidance_scale=5.0).frames[0]
+          out = pipe(prompt=prompt, negative_prompt=neg, num_frames=49, height=384, width=672, num_inference_steps=20, guidance_scale=5.0).frames[0]
           export_to_video(out, "/content/out.mp4", fps=16)
           print(f"[gen] DONE in {time.time()-t0:.0f}s, size={os.path.getsize('/content/out.mp4')}")
           print("OUTPUT_FILE=/content/out.mp4")
@@ -55,7 +55,7 @@ jobs:
       - name: run generation
         run: |
           set -o pipefail
-          colab --auth adc exec -s gen -f gen.py --timeout 1800 2>&1 | tail -60
+          colab --auth adc exec -s gen -f gen.py --timeout 1500 2>&1 | tail -60
       - name: download result
         run: |
           colab --auth adc download -s gen /content/out.mp4 out.mp4
