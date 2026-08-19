@@ -32,6 +32,8 @@ jobs:
           import json, os
           prompt = os.environ.get("PROMPT", "a cute orange cat walking through a sunny meadow")
           gen = '''import torch, os, time, sys
+          os.environ["HF_HUB_DISABLE_XET"] = "1"
+          os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
           def log(m):
               print(m, flush=True)
           t0 = time.time()
