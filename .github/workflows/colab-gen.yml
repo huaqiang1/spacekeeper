@@ -66,25 +66,34 @@ jobs:
           for f in FILES:
               dl(f)
           log(f"[gen] t={time.time()-t0:.0f}s all files downloaded")
-          from diffusers import WanPipeline, WanTransformer3DModel, AutoencoderKLWan, UniPCMultistepScheduler
+          from diffusers import WanTransformer3DModel, AutoencoderKLWan, UniPCMultistepScheduler, WanPipeline
           from transformers import UMT5EncoderModel, T5TokenizerFast
           from diffusers.utils import export_to_video
+          from safetensors import safe_open
           log(f"[gen] t={time.time()-t0:.0f}s diffusers imported")
-          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
-          log(f"[gen] mem-before: {r.stdout.strip().splitlines()[1]}")
           tok = T5TokenizerFast.from_pretrained("/content/wan/tokenizer")
           log(f"[gen] t={time.time()-t0:.0f}s tokenizer loaded")
           te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", torch_dtype=torch.float16, low_cpu_mem_usage=True)
           log(f"[gen] t={time.time()-t0:.0f}s text_encoder loaded")
-          tr = WanTransformer3DModel.from_pretrained("/content/wan/transformer", torch_dtype=torch.float16, low_cpu_mem_usage=True)
-          log(f"[gen] t={time.time()-t0:.0f}s transformer loaded")
-          vae = AutoencoderKLWan.from_pretrained("/content/wan/vae", torch_dtype=torch.float16, low_cpu_mem_usage=True)
-          log(f"[gen] t={time.time()-t0:.0f}s vae loaded")
+          def load_sf(files, model, tag):
+              model.to("cuda")
+              state = {}
+              for fp in files:
+                  with safe_open(fp, framework="pt", device="cuda") as f:
+                      for k in f.keys():
+                          state[k] = f.get_tensor(k)
+                  log(f"[gen] t={time.time()-t0:.0f}s safetensors read {fp.split('/')[-1]}")
+              model.load_state_dict(state, strict=True)
+              log(f"[gen] t={time.time()-t0:.0f}s {tag} loaded")
+          tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
+          load_sf(["/content/wan/transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+                   "/content/wan/transformer/diffusion_pytorch_model-00002-of-00002.safetensors"], tr, "transformer")
+          vae = AutoencoderKLWan.from_config("/content/wan/vae/config.json")
+          load_sf(["/content/wan/vae/diffusion_pytorch_model.safetensors"], vae, "vae")
           sch = UniPCMultistepScheduler.from_pretrained("/content/wan/scheduler")
           log(f"[gen] t={time.time()-t0:.0f}s scheduler loaded")
+          te.to("cuda")
           pipe = WanPipeline(text_encoder=te, tokenizer=tok, transformer=tr, vae=vae, scheduler=sch)
-          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
-          log(f"[gen] mem-after: {r.stdout.strip().splitlines()[1]}")
           log(f"[gen] t={time.time()-t0:.0f}s model loaded")
           pipe.to("cuda")
           log(f"[gen] t={time.time()-t0:.0f}s moved to cuda")
