@@ -1,0 +1,28 @@
+name: colab-test
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install colab cli
+        run: pip install google-colab-cli
+      - name: write ADC
+        run: |
+          mkdir -p ~/.config/gcloud
+          echo '${{ secrets.GOOGLE_ADC }}' > ~/.config/gcloud/application_default_credentials.json
+      - name: colab smoke test
+        run: |
+          set +e
+          colab new ctest -gpu=T4 --sync 2>&1 | tail -5
+          echo "=== list ==="
+          colab list 2>&1 | tail -5
+          echo "=== stop ==="
+          colab stop ctest 2>&1 | tail -3
+          exit 0
