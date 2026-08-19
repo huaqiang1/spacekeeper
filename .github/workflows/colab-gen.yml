@@ -56,6 +56,10 @@ jobs:
           PY
       - name: create T4 session
         run: colab --auth adc new -s gen --gpu T4
+      - name: probe HF speed
+        run: |
+          printf 'import urllib.request, time\nfor u in ["https://huggingface.co/robots.txt", "https://hf-mirror.com/robots.txt"]:\n    t=time.time()\n    try:\n        d=urllib.request.urlopen(u, timeout=15).read()\n        print(u, "OK", len(d), f"{time.time()-t:.1f}s")\n    except Exception as e:\n        print(u, "FAIL", repr(e))\nu="https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers/resolve/main/diffusion_pytorch_model-00001-of-00002.safetensors"\nreq=urllib.request.Request(u, headers={"Range":"bytes=0-10485759"})\nt=time.time()\nimport ssl\nctx=ssl.create_default_context()\nd=urllib.request.urlopen(req, timeout=90, context=ctx).read()\nprint("10MB-dl", len(d), f"{time.time()-t:.1f}s", f"{len(d)/(time.time()-t)/1048576:.1f}MB/s")\n' > probe.py
+          colab --auth adc exec -s gen -f probe.py --timeout 180 2>&1 | tail -12
       - name: run generation
         run: |
           set -o pipefail
