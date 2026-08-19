@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: install colab cli
-        run: pip install google-colab-cli
+        run: pip install google-colab-cli "jupyter-kernel-client==0.15.0"
       - name: write ADC
         env:
           GOOGLE_ADC_B64: ${{ secrets.GOOGLE_ADC_B64 }}
