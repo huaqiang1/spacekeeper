@@ -141,6 +141,13 @@ jobs:
           log(f"[gen] t={time.time()-t0:.0f}s tokenizer loaded")
           te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", torch_dtype=torch.float16, low_cpu_mem_usage=True)
           log(f"[gen] t={time.time()-t0:.0f}s text_encoder loaded")
+          te.to("cuda")
+          log(f"[gen] t={time.time()-t0:.0f}s text_encoder on cuda")
+          import gc
+          gc.collect()
+          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
+          log(f"[gen] mem: {r.stdout.strip().splitlines()[1]}")
+          log(f"[gen] default_dtype={torch.get_default_dtype()}")
           def load_sf(files, model, tag):
               model.to("cuda")
               state = {}
@@ -153,6 +160,8 @@ jobs:
               log(f"[gen] t={time.time()-t0:.0f}s {tag} loaded")
           torch.set_default_dtype(torch.float16)
           tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
+          torch.set_default_dtype(torch.float32)
+          log(f"[gen] t={time.time()-t0:.0f}s transformer created p0={next(tr.parameters()).dtype}")
           load_sf(["/content/wan/transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
                    "/content/wan/transformer/diffusion_pytorch_model-00002-of-00002.safetensors"], tr, "transformer")
           vae = AutoencoderKLWan.from_config("/content/wan/vae/config.json")
@@ -205,7 +214,7 @@ jobs:
         run: |
           set -o pipefail
           if [ "$MODE" = "probe" ]; then
-            colab --auth adc exec -s gen -f run.py --timeout 300 2>&1 | tail -30
+            colab --auth adc exec -s gen -f run.py --timeout 900 2>&1 | tail -30
           else
             colab --auth adc exec -s gen -f run.py --timeout 1500 2>&1 | tail -60
           fi
