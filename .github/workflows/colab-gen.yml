@@ -88,12 +88,8 @@ jobs:
           except Exception as e:
               print("FAIL:", repr(e)[:300], flush=True)
           '''
-          if mode == "probe":
-              open("run.py", "w").write(probe)
-              print("run.py (probe) written")
-          else:
-              gen = '''import torch, os, time, sys
-              os.environ["HF_HUB_DISABLE_XET"] = "1"
+          gen = '''import torch, os, time, sys
+          os.environ["HF_HUB_DISABLE_XET"] = "1"
           os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
           def log(m):
               print(m, flush=True)
@@ -168,7 +164,12 @@ jobs:
           log(f"[gen] DONE t={time.time()-t0:.0f}s size={os.path.getsize('/content/out.mp4')}")
           print("OUTPUT_FILE=/content/out.mp4", flush=True)
           ''' % json.dumps(prompt)
-              open("run.py", "w").write(gen)
+          import textwrap
+          if mode == "probe":
+              open("run.py", "w").write(textwrap.dedent(probe))
+              print("run.py (probe) written")
+          else:
+              open("run.py", "w").write(textwrap.dedent(gen))
               print("run.py (gen) written")
           PY
       - name: ensure T4 session
