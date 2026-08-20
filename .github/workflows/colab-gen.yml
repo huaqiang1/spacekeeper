@@ -109,7 +109,15 @@ jobs:
           print("gen.py written")
           PY
       - name: create T4 session
-        run: colab --auth adc new -s gen --gpu T4
+        run: |
+          for i in 1 2 3 4; do
+            echo "=== attempt $i ==="
+            if colab --auth adc new -s gen --gpu T4; then
+              exit 0
+            fi
+            sleep 120
+          done
+          exit 1
       - name: probe HF speed
         run: |
           printf 'import urllib.request, time, ssl\nctx=ssl.create_default_context()\nu="https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers/resolve/main/transformer/diffusion_pytorch_model-00001-of-00002.safetensors"\nfor mb in [1, 10, 50]:\n    req=urllib.request.Request(u, headers={"Range": f"bytes=0-{mb*1048576-1}"})\n    t=time.time()\n    try:\n        d=urllib.request.urlopen(req, timeout=60, context=ctx).read()\n        sp=(time.time()-t)\n        print(f"dl{mb}MB", len(d), f"{sp:.1f}s", f"{len(d)/sp/1048576:.2f}MB/s")\n    except Exception as e:\n        print(f"dl{mb}MB FAIL", repr(e)[:200])\n' > probe.py
