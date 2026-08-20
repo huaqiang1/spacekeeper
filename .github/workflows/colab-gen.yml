@@ -37,14 +37,46 @@ jobs:
           import json, os
           mode = os.environ.get("MODE", "full")
           prompt = os.environ.get("PROMPT", "a cute orange cat walking through a sunny meadow")
-          probe = '''import time, torch, subprocess
+          probe = '''import time, torch, os, subprocess
+          t0 = time.time()
+          BASE = "https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers/resolve/main/"
+          FILES = [
+              "model_index.json", "scheduler/scheduler_config.json",
+              "text_encoder/config.json", "text_encoder/model.safetensors.index.json",
+              "text_encoder/model-00001-of-00005.safetensors", "text_encoder/model-00002-of-00005.safetensors",
+              "text_encoder/model-00003-of-00005.safetensors", "text_encoder/model-00004-of-00005.safetensors",
+              "text_encoder/model-00005-of-00005.safetensors",
+              "tokenizer/special_tokens_map.json", "tokenizer/spiece.model", "tokenizer/tokenizer.json", "tokenizer/tokenizer_config.json",
+              "transformer/config.json", "transformer/diffusion_pytorch_model.safetensors.index.json",
+              "transformer/diffusion_pytorch_model-00001-of-00002.safetensors", "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+              "vae/config.json", "vae/diffusion_pytorch_model.safetensors",
+          ]
+          print("checking files...", flush=True)
+          need = []
+          for f in FILES:
+              if not os.path.exists("/content/wan/" + f) or os.path.getsize("/content/wan/" + f) == 0:
+                  need.append(f)
+          print(f"missing {len(need)} files, downloading...", flush=True)
+          for f in need:
+              p = "/content/wan/" + f
+              os.makedirs(os.path.dirname(p), exist_ok=True)
+              for a in range(3):
+                  r = subprocess.run(["curl", "-sL", "--retry", "5", "--retry-delay", "2", "--connect-timeout", "30", "-o", p, BASE + f], timeout=600)
+                  if r.returncode == 0 and os.path.getsize(p) > 0:
+                      print(f"DL {f} {os.path.getsize(p)//1048576}MB", flush=True)
+                      break
+          print("downloads done", flush=True)
           r = subprocess.run(["free", "-m"], capture_output=True, text=True)
           print("MEM:", r.stdout.strip().splitlines()[1], flush=True)
           from diffusers import WanTransformer3DModel
+          import torch
           t0 = time.time()
           try:
-              tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json", torch_dtype=torch.float16)
-              print(f"from_config ok {time.time()-t0:.1f}s dtype={tr.dtype} params={sum(p.numel() for p in tr.parameters())/1e9:.2f}B", flush=True)
+              torch.set_default_dtype(torch.float16)
+              tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
+              torch.set_default_dtype(torch.float32)
+              p0 = next(tr.parameters())
+              print(f"from_config ok {time.time()-t0:.1f}s dtype={tr.dtype} p0.dtype={p0.dtype} params={sum(x.numel() for x in tr.parameters())/1e9:.2f}B", flush=True)
               t0 = time.time()
               tr = tr.to("cuda")
               print(f"to_cuda ok {time.time()-t0:.1f}s gpu={torch.cuda.memory_allocated()/1e9:.1f}GB", flush=True)
