@@ -141,23 +141,23 @@ jobs:
           log(f"[gen] t={time.time()-t0:.0f}s tokenizer loaded")
           te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", torch_dtype=torch.float16, low_cpu_mem_usage=True)
           log(f"[gen] t={time.time()-t0:.0f}s text_encoder loaded")
-          te.to("cuda")
-          log(f"[gen] t={time.time()-t0:.0f}s text_encoder on cuda")
+          log(f"[gen] t={time.time()-t0:.0f}s text_encoder on cpu")
           import gc
           gc.collect()
           r = subprocess.run(["free", "-m"], capture_output=True, text=True)
           log(f"[gen] mem: {r.stdout.strip().splitlines()[1]}")
           log(f"[gen] default_dtype={torch.get_default_dtype()}")
           def load_sf(files, model, tag):
-              model.to("cuda")
               state = {}
               for fp in files:
-                  with safe_open(fp, framework="pt", device="cuda") as f:
+                  with safe_open(fp, framework="pt", device="cpu") as f:
                       for k in f.keys():
                           state[k] = f.get_tensor(k)
                   log(f"[gen] t={time.time()-t0:.0f}s safetensors read {fp.split('/')[-1]}")
               model.load_state_dict(state, strict=True)
-              log(f"[gen] t={time.time()-t0:.0f}s {tag} loaded")
+              del state
+              gc.collect()
+              log(f"[gen] t={time.time()-t0:.0f}s {tag} loaded on cpu")
           torch.set_default_dtype(torch.float16)
           tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
           torch.set_default_dtype(torch.float32)
@@ -169,11 +169,10 @@ jobs:
           load_sf(["/content/wan/vae/diffusion_pytorch_model.safetensors"], vae, "vae")
           sch = UniPCMultistepScheduler.from_pretrained("/content/wan/scheduler")
           log(f"[gen] t={time.time()-t0:.0f}s scheduler loaded")
-          te.to("cuda")
           pipe = WanPipeline(text_encoder=te, tokenizer=tok, transformer=tr, vae=vae, scheduler=sch)
           log(f"[gen] t={time.time()-t0:.0f}s model loaded")
-          pipe.to("cuda")
-          log(f"[gen] t={time.time()-t0:.0f}s moved to cuda")
+          pipe.enable_model_cpu_offload()
+          log(f"[gen] t={time.time()-t0:.0f}s cpu_offload enabled")
           prompt = %s
           neg = "bright, low quality, watermark, text, jpeg artifacts"
           log(f"[gen] t={time.time()-t0:.0f}s generating...")
