@@ -129,36 +129,16 @@ jobs:
           for f in FILES:
               dl(f)
           log(f"[gen] t={time.time()-t0:.0f}s all files downloaded")
-          from diffusers import WanTransformer3DModel, AutoencoderKLWan, UniPCMultistepScheduler, WanPipeline
-          from transformers import UMT5EncoderModel, T5TokenizerFast
+          from diffusers import WanPipeline
           from diffusers.utils import export_to_video
-          from safetensors.torch import load_model
-          log(f"[gen] t={time.time()-t0:.0f}s diffusers imported")
-          tok = T5TokenizerFast.from_pretrained("/content/wan/tokenizer")
-          log(f"[gen] t={time.time()-t0:.0f}s tokenizer loaded")
-          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
-          log(f"[gen] mem: {r.stdout.strip().splitlines()[1]}")
-          log(f"[gen] t={time.time()-t0:.0f}s loading transformer on cpu...")
-          torch.set_default_dtype(torch.float16)
-          tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
-          load_model(tr, "/content/wan/transformer/diffusion_pytorch_model-00001-of-00002.safetensors", strict=False)
-          load_model(tr, "/content/wan/transformer/diffusion_pytorch_model-00002-of-00002.safetensors", strict=False)
-          log(f"[gen] t={time.time()-t0:.0f}s transformer loaded on cpu")
-          log(f"[gen] t={time.time()-t0:.0f}s loading vae on cpu...")
-          vae = AutoencoderKLWan.from_config("/content/wan/vae/config.json")
-          load_model(vae, "/content/wan/vae/diffusion_pytorch_model.safetensors")
-          log(f"[gen] t={time.time()-t0:.0f}s vae loaded on cpu")
-          log(f"[gen] t={time.time()-t0:.0f}s loading text_encoder on cpu...")
-          te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", torch_dtype=torch.float16, low_cpu_mem_usage=True)
-          log(f"[gen] t={time.time()-t0:.0f}s text_encoder loaded on cpu")
-          sch = UniPCMultistepScheduler.from_pretrained("/content/wan/scheduler")
-          pipe = WanPipeline(text_encoder=te, tokenizer=tok, transformer=tr, vae=vae, scheduler=sch)
-          log(f"[gen] t={time.time()-t0:.0f}s pipeline built, enabling cpu offload...")
+          log(f"[gen] t={time.time()-t0:.0f}s diffusers imported, loading pipeline...")
+          pipe = WanPipeline.from_pretrained("/content/wan", torch_dtype=torch.float16)
+          log(f"[gen] t={time.time()-t0:.0f}s pipeline loaded, enabling cpu offload...")
           pipe.enable_model_cpu_offload()
           log(f"[gen] t={time.time()-t0:.0f}s cpu offload enabled, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
           prompt = %s
           neg = "bright, low quality, watermark, text, jpeg artifacts"
-          log(f"[gen] t={time.time()-t0:.0f}s generating (cpu offload, will be slower)...")
+          log(f"[gen] t={time.time()-t0:.0f}s generating...")
           out = pipe(prompt=prompt, negative_prompt=neg, num_frames=49, height=384, width=672, num_inference_steps=20, guidance_scale=5.0).frames[0]
           export_to_video(out, "/content/out.mp4", fps=16)
           log(f"[gen] DONE t={time.time()-t0:.0f}s size={os.path.getsize('/content/out.mp4')}")
