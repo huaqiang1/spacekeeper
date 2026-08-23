@@ -97,9 +97,10 @@ jobs:
           except Exception as e:
               print("FAIL:", repr(e)[:300], flush=True)
           '''
-          gen = '''import torch, os, time, sys, gc, subprocess
+          gen = r'''import torch, os, time, sys, gc, subprocess
           os.environ["HF_HUB_DISABLE_XET"] = "1"
           os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+          os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
           def log(m):
               print(m, flush=True)
           t0 = time.time()
@@ -125,16 +126,42 @@ jobs:
                       log(f"[gen] t={time.time()-t0:.0f}s DL {f} {os.path.getsize(p)//1048576}MB")
                       return
                   log(f"[gen] t={time.time()-t0:.0f}s DL RETRY {f}")
-          log(f"[gen] t={time.time()-t0:.0f}s downloading {len(FILES)} files (curl serial)...")
+          log(f"[gen] t={time.time()-t0:.0f}s downloading {len(FILES)} files...")
           for f in FILES:
               dl(f)
           log(f"[gen] t={time.time()-t0:.0f}s all files downloaded")
-          from diffusers import WanPipeline
+          from diffusers import WanTransformer3DModel, AutoencoderKLWan, UniPCMultistepScheduler, WanPipeline
+          from transformers import UMT5EncoderModel, T5TokenizerFast, BitsAndBytesConfig
           from diffusers.utils import export_to_video
-          log(f"[gen] t={time.time()-t0:.0f}s diffusers imported, loading pipeline...")
-          os.environ["HF_HUB_OFFLINE"] = "1"
-          pipe = WanPipeline.from_pretrained("/content/wan", torch_dtype=torch.float16, local_files_only=True)
-          log(f"[gen] t={time.time()-t0:.0f}s pipeline loaded, enabling cpu offload...")
+          from safetensors.torch import load_model
+          log(f"[gen] t={time.time()-t0:.0f}s imports done")
+          tok = T5TokenizerFast.from_pretrained("/content/wan/tokenizer")
+          log(f"[gen] t={time.time()-t0:.0f}s tokenizer loaded")
+          log(f"[gen] t={time.time()-t0:.0f}s loading text_encoder (4bit quant, ~2.7GB)...")
+          bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_quant_type="nf4")
+          te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", quantization_config=bnb_config, device_map="cuda:0")
+          gc.collect()
+          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
+          log(f"[gen] mem after te: {r.stdout.strip().splitlines()[1]}")
+          log(f"[gen] t={time.time()-t0:.0f}s text_encoder on gpu, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] t={time.time()-t0:.0f}s loading transformer on cpu...")
+          torch.set_default_dtype(torch.float16)
+          tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
+          load_model(tr, "/content/wan/transformer/diffusion_pytorch_model-00001-of-00002.safetensors", strict=False)
+          load_model(tr, "/content/wan/transformer/diffusion_pytorch_model-00002-of-00002.safetensors", strict=False)
+          log(f"[gen] t={time.time()-t0:.0f}s transformer loaded on cpu")
+          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
+          log(f"[gen] mem after tr: {r.stdout.strip().splitlines()[1]}")
+          log(f"[gen] t={time.time()-t0:.0f}s loading vae on cpu...")
+          vae = AutoencoderKLWan.from_config("/content/wan/vae/config.json")
+          load_model(vae, "/content/wan/vae/diffusion_pytorch_model.safetensors")
+          log(f"[gen] t={time.time()-t0:.0f}s vae loaded on cpu")
+          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
+          log(f"[gen] mem after vae: {r.stdout.strip().splitlines()[1]}")
+          sch = UniPCMultistepScheduler.from_pretrained("/content/wan/scheduler")
+          log(f"[gen] t={time.time()-t0:.0f}s building pipeline...")
+          pipe = WanPipeline(text_encoder=te, tokenizer=tok, transformer=tr, vae=vae, scheduler=sch)
+          log(f"[gen] t={time.time()-t0:.0f}s pipeline built, enabling cpu offload...")
           pipe.enable_model_cpu_offload()
           log(f"[gen] t={time.time()-t0:.0f}s cpu offload enabled, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
           prompt = %s
