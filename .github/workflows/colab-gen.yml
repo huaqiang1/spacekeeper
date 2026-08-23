@@ -22,6 +22,10 @@ jobs:
           python-version: "3.12"
       - name: install colab cli
         run: pip install google-colab-cli "jupyter-kernel-client==0.15.0"
+      - name: install bitsandbytes on colab
+        run: |
+          printf 'import subprocess\nsubprocess.run(["pip", "install", "-q", "bitsandbytes>=0.46.1"], check=True)\nprint("bitsandbytes installed")\n' > install_bnb.py
+          colab --auth adc exec -s gen -f install_bnb.py --timeout 120 2>&1 | tail -5
       - name: write ADC
         env:
           GOOGLE_ADC_B64: ${{ secrets.GOOGLE_ADC_B64 }}
