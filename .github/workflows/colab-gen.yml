@@ -1,5 +1,7 @@
 name: colab-gen
 on:
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       prompt:
@@ -35,8 +37,8 @@ jobs:
         run: |
           python - <<'PY'
           import json, os
-          mode = os.environ.get("MODE", "full")
-          prompt = os.environ.get("PROMPT", "a cute orange cat walking through a sunny meadow")
+          mode = os.environ.get("MODE", "full") or "full"
+          prompt = os.environ.get("PROMPT", "") or "a cute orange cat walking through a sunny meadow"
           probe = '''import time, torch, os, subprocess
           t0 = time.time()
           BASE = "https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers/resolve/main/"
@@ -260,5 +262,5 @@ jobs:
           name: video-output
           path: out.mp4
       - name: teardown session
-        if: always() && ${{ github.event.inputs.mode == 'full' }}
+        if: always() && (github.event.inputs.mode == 'full' || github.event.inputs.mode == '')
         run: colab --auth adc stop -s gen || true
