@@ -22,10 +22,6 @@ jobs:
           python-version: "3.12"
       - name: install colab cli
         run: pip install google-colab-cli "jupyter-kernel-client==0.15.0"
-      - name: install bitsandbytes on colab
-        run: |
-          printf 'import subprocess\nsubprocess.run(["pip", "install", "-q", "bitsandbytes>=0.46.1"], check=True)\nprint("bitsandbytes installed")\n' > install_bnb.py
-          colab --auth adc exec -s gen -f install_bnb.py --timeout 120 2>&1 | tail -5
       - name: write ADC
         env:
           GOOGLE_ADC_B64: ${{ secrets.GOOGLE_ADC_B64 }}
@@ -101,7 +97,7 @@ jobs:
           except Exception as e:
               print("FAIL:", repr(e)[:300], flush=True)
           '''
-          gen = r'''import torch, os, time, sys, gc, subprocess
+          gen = r'''import torch, os, time, sys, gc, subprocess, json
           os.environ["HF_HUB_DISABLE_XET"] = "1"
           os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
           os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -134,20 +130,27 @@ jobs:
           for f in FILES:
               dl(f)
           log(f"[gen] t={time.time()-t0:.0f}s all files downloaded")
-          from diffusers import WanTransformer3DModel, AutoencoderKLWan, UniPCMultistepScheduler, WanPipeline
-          from transformers import UMT5EncoderModel, T5TokenizerFast, BitsAndBytesConfig
+          import torch
+          from diffusers import WanTransformer3DModel, AutoencoderKLWan, UniPCMultistepScheduler
+          from transformers import UMT5EncoderModel, T5TokenizerFast
           from diffusers.utils import export_to_video
           from safetensors.torch import load_model
           log(f"[gen] t={time.time()-t0:.0f}s imports done")
           tok = T5TokenizerFast.from_pretrained("/content/wan/tokenizer")
           log(f"[gen] t={time.time()-t0:.0f}s tokenizer loaded")
-          log(f"[gen] t={time.time()-t0:.0f}s loading text_encoder (4bit quant, ~2.7GB)...")
-          bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_quant_type="nf4")
-          te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", quantization_config=bnb_config, device_map="cuda:0")
+          log(f"[gen] t={time.time()-t0:.0f}s loading text_encoder on cpu...")
+          te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", torch_dtype=torch.float16, low_cpu_mem_usage=True)
+          log(f"[gen] t={time.time()-t0:.0f}s text_encoder loaded, moving to cuda...")
+          te = te.to("cuda")
+          del te
           gc.collect()
+          torch.cuda.empty_cache()
+          log(f"[gen] t={time.time()-t0:.0f}s text_encoder freed from gpu, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] t={time.time()-t0:.0f}s loading text_encoder again (quick, from_pretrained caches)...")
+          te = UMT5EncoderModel.from_pretrained("/content/wan/text_encoder", torch_dtype=torch.float16, low_cpu_mem_usage=True)
+          log(f"[gen] t={time.time()-t0:.0f}s text_encoder reloaded on cpu")
           r = subprocess.run(["free", "-m"], capture_output=True, text=True)
-          log(f"[gen] mem after te: {r.stdout.strip().splitlines()[1]}")
-          log(f"[gen] t={time.time()-t0:.0f}s text_encoder on gpu, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] mem: {r.stdout.strip().splitlines()[1]}")
           log(f"[gen] t={time.time()-t0:.0f}s loading transformer on cpu...")
           torch.set_default_dtype(torch.float16)
           tr = WanTransformer3DModel.from_config("/content/wan/transformer/config.json")
@@ -155,24 +158,63 @@ jobs:
           load_model(tr, "/content/wan/transformer/diffusion_pytorch_model-00002-of-00002.safetensors", strict=False)
           log(f"[gen] t={time.time()-t0:.0f}s transformer loaded on cpu")
           r = subprocess.run(["free", "-m"], capture_output=True, text=True)
-          log(f"[gen] mem after tr: {r.stdout.strip().splitlines()[1]}")
+          log(f"[gen] mem: {r.stdout.strip().splitlines()[1]}")
           log(f"[gen] t={time.time()-t0:.0f}s loading vae on cpu...")
           vae = AutoencoderKLWan.from_config("/content/wan/vae/config.json")
           load_model(vae, "/content/wan/vae/diffusion_pytorch_model.safetensors")
           log(f"[gen] t={time.time()-t0:.0f}s vae loaded on cpu")
-          r = subprocess.run(["free", "-m"], capture_output=True, text=True)
-          log(f"[gen] mem after vae: {r.stdout.strip().splitlines()[1]}")
           sch = UniPCMultistepScheduler.from_pretrained("/content/wan/scheduler")
           log(f"[gen] t={time.time()-t0:.0f}s building pipeline...")
-          pipe = WanPipeline(text_encoder=te, tokenizer=tok, transformer=tr, vae=vae, scheduler=sch)
-          log(f"[gen] t={time.time()-t0:.0f}s pipeline built, enabling cpu offload...")
-          pipe.enable_model_cpu_offload()
-          log(f"[gen] t={time.time()-t0:.0f}s cpu offload enabled, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
-          prompt = %s
+          pipe = None
+          import diffusers
+          pipe = diffusers.WanPipeline(text_encoder=te, tokenizer=tok, transformer=tr, vae=vae, scheduler=sch)
+          log(f"[gen] t={time.time()-t0:.0f}s pipeline built")
+          prompt_str = %s
           neg = "bright, low quality, watermark, text, jpeg artifacts"
-          log(f"[gen] t={time.time()-t0:.0f}s generating...")
-          out = pipe(prompt=prompt, negative_prompt=neg, num_frames=49, height=384, width=672, num_inference_steps=20, guidance_scale=5.0).frames[0]
-          export_to_video(out, "/content/out.mp4", fps=16)
+          log(f"[gen] t={time.time()-t0:.0f}s encoding prompt...")
+          prompt_embeds, negative_prompt_embeds = pipe.encode_prompt(prompt=prompt_str, negative_prompt=neg, device="cuda", dtype=torch.float16)
+          log(f"[gen] t={time.time()-t0:.0f}s prompt encoded, freeing text_encoder...")
+          te_cpu = te
+          pipe.text_encoder = None
+          del te_cpu
+          gc.collect()
+          torch.cuda.empty_cache()
+          log(f"[gen] t={time.time()-t0:.0f}s text_encoder freed, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] t={time.time()-t0:.0f}s moving transformer to cuda...")
+          tr = tr.to("cuda")
+          gc.collect()
+          log(f"[gen] t={time.time()-t0:.0f}s transformer on cuda, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] t={time.time()-t0:.0f}s generating latents...")
+          latents = torch.randn(1, 16, 13, 48, 84, dtype=torch.float16, device="cuda")
+          from diffusers.utils import randn_tensor
+          shape = (1, 16, 13, 48, 84)
+          latents = randn_tensor(shape, dtype=torch.float16, device="cuda", generator=torch.Generator(device="cuda").manual_seed(42))
+          timesteps = torch.linspace(1000, 0, 21, device="cuda")
+          for i, t in enumerate(timesteps[:-1]):
+              t_tensor = torch.tensor([t], device="cuda", dtype=torch.float16)
+              noise_pred = tr(hidden_states=latents, timestep=t_tensor, encoder_hidden_states=prompt_embeds).sample
+              alphas_cumprod = sch.betas
+              alpha = alphas_cumprod[int(t)]
+              beta = 1 - alpha
+              latents = latents - beta * noise_pred
+              if i % 5 == 0:
+                  log(f"[gen] t={time.time()-t0:.0f}s step {i+1}/20, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] t={time.time()-t0:.0f}s denoising done, freeing transformer...")
+          pipe.transformer = None
+          del tr
+          gc.collect()
+          torch.cuda.empty_cache()
+          log(f"[gen] t={time.time()-t0:.0f}s transformer freed, moving vae to cuda...")
+          vae = vae.to("cuda")
+          gc.collect()
+          log(f"[gen] t={time.time()-t0:.0f}s vae on cuda, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] t={time.time()-t0:.0f}s decoding...")
+          with torch.no_grad():
+              decoded = vae.decode(latents / vae.config.scaling_factor).sample
+          log(f"[gen] t={time.time()-t0:.0f}s decode done")
+          images = (decoded / 2 + 0.5).clamp(0, 1).permute(0, 2, 3, 4, 1).float().cpu().numpy()
+          from diffusers.utils import export_to_video
+          export_to_video(images, "/content/out.mp4", fps=16)
           log(f"[gen] DONE t={time.time()-t0:.0f}s size={os.path.getsize('/content/out.mp4')}")
           print("OUTPUT_FILE=/content/out.mp4", flush=True)
           ''' % json.dumps(prompt)
