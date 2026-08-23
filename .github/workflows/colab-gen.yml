@@ -164,11 +164,15 @@ jobs:
           prompt_str = %s
           neg = "bright, low quality, watermark, text, jpeg artifacts"
           log(f"[gen] t={time.time()-t0:.0f}s encoding prompt on cuda...")
-          prompt_embeds, negative_prompt_embeds = te(
-              **tok(prompt_str, padding="max_length", max_length=226, truncation=True, return_tensors="pt").to("cuda")
-          ).last_hidden_state, te(
-              **tok(neg, padding="max_length", max_length=226, truncation=True, return_tensors="pt").to("cuda")
-          ).last_hidden_state
+          with torch.no_grad():
+              prompt_embeds = te(
+                  **tok(prompt_str, padding="max_length", max_length=226, truncation=True, return_tensors="pt").to("cuda")
+              ).last_hidden_state
+              log(f"[gen] t={time.time()-t0:.0f}s prompt embeds done ({prompt_embeds.shape}), encoding negative...")
+              negative_prompt_embeds = te(
+                  **tok(neg, padding="max_length", max_length=226, truncation=True, return_tensors="pt").to("cuda")
+              ).last_hidden_state
+              log(f"[gen] t={time.time()-t0:.0f}s negative embeds done ({negative_prompt_embeds.shape})")
           log(f"[gen] t={time.time()-t0:.0f}s prompt encoded, freeing text_encoder from gpu...")
           pipe_text_encoder = te
           del te
