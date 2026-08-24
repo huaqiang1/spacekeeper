@@ -206,10 +206,15 @@ jobs:
           vae = vae.to("cuda")
           gc.collect()
           log(f"[gen] t={time.time()-t0:.0f}s vae on cuda, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          if hasattr(vae, "enable_tiling"):
+              vae.enable_tiling()
           log(f"[gen] t={time.time()-t0:.0f}s decoding...")
+          latents_mean = torch.tensor(vae.config.latents_mean).view(1, vae.config.z_dim, 1, 1, 1).to(latents.device, vae.dtype)
+          latents_std = 1.0 / torch.tensor(vae.config.latents_std).view(1, vae.config.z_dim, 1, 1, 1).to(latents.device, vae.dtype)
+          latents = latents.to(vae.dtype) / latents_std + latents_mean
           with torch.no_grad():
-              decoded = vae.decode(latents / vae.config.scaling_factor).sample
-          images = (decoded / 2 + 0.5).clamp(0, 1).permute(0, 2, 3, 4, 1).float().cpu().numpy()
+              decoded = vae.decode(latents).sample
+          images = ((decoded / 2 + 0.5).clamp(0, 1)[0]).permute(1, 2, 3, 0).float().cpu().numpy()
           export_to_video(images, "/content/out.mp4", fps=16)
           log(f"[gen] DONE t={time.time()-t0:.0f}s size={os.path.getsize('/content/out.mp4')}")
           print("OUTPUT_FILE=/content/out.mp4", flush=True)
