@@ -16,7 +16,7 @@ on:
 jobs:
   gen:
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -239,16 +239,16 @@ jobs:
       - name: probe HF speed
         run: |
           printf 'import urllib.request, time, ssl\nctx=ssl.create_default_context()\nu="https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers/resolve/main/transformer/diffusion_pytorch_model-00001-of-00002.safetensors"\nfor mb in [1, 10, 50]:\n    req=urllib.request.Request(u, headers={"Range": f"bytes=0-{mb*1048576-1}"})\n    t=time.time()\n    try:\n        d=urllib.request.urlopen(req, timeout=60, context=ctx).read()\n        sp=(time.time()-t)\n        print(f"dl{mb}MB", len(d), f"{sp:.1f}s", f"{len(d)/sp/1048576:.2f}MB/s")\n    except Exception as e:\n        print(f"dl{mb}MB FAIL", repr(e)[:200])\n' > probe.py
-          colab --auth adc exec -s gen -f probe.py --timeout 180 2>&1 | tail -12
+          timeout 300 colab --auth adc exec -s gen -f probe.py --timeout 180 2>&1 | tail -12 || true
       - name: run generation
         env:
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -o pipefail
           if [ "$MODE" = "probe" ]; then
-            colab --auth adc exec -s gen -f run.py --timeout 900 2>&1 | tail -30
+            timeout 1000 colab --auth adc exec -s gen -f run.py --timeout 900 2>&1 | tail -30
           else
-            colab --auth adc exec -s gen -f run.py --timeout 3600 2>&1 | tail -80
+            timeout 3700 colab --auth adc exec -s gen -f run.py --timeout 3600 2>&1 | tail -80
           fi
       - name: download result
         if: ${{ github.event.inputs.mode != 'probe' }}
