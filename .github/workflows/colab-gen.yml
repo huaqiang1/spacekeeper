@@ -12,6 +12,10 @@ on:
         description: "probe (diagnose load) or full (generate video)"
         required: false
         default: "full"
+      frames:
+        description: "Number of frames (49=3s, 81=5s max native)"
+        required: false
+        default: "81"
 
 jobs:
   gen:
@@ -34,11 +38,15 @@ jobs:
         env:
           PROMPT: ${{ github.event.inputs.prompt }}
           MODE: ${{ github.event.inputs.mode }}
+          FRAMES: ${{ github.event.inputs.frames }}
         run: |
           python - <<'PY'
           import json, os
           mode = os.environ.get("MODE", "full") or "full"
           prompt = os.environ.get("PROMPT", "") or "a cute orange cat walking through a sunny meadow"
+          frames = int(os.environ.get("FRAMES", "") or 81)
+          assert 9 <= frames <= 81 and (frames - 1) % 4 == 0, "frames must be 4k+1, max 81"
+          latent_frames = (frames - 1) // 4 + 1
           probe = '''import time, torch, os, subprocess
           t0 = time.time()
           BASE = "https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers/resolve/main/"
@@ -186,7 +194,7 @@ jobs:
           log(f"[gen] t={time.time()-t0:.0f}s transformer on cuda, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
           log(f"[gen] t={time.time()-t0:.0f}s running denoising loop (20 steps)...")
           sch.set_timesteps(20)
-          latent_shape = (1, 16, 13, 48, 84)
+          latent_shape = (1, 16, %d, 48, 84)
           latents = torch.randn(latent_shape, dtype=torch.float16, device="cuda")
           latents = latents * sch.init_noise_sigma
           from tqdm.auto import tqdm
@@ -218,7 +226,7 @@ jobs:
           export_to_video(images, "/content/out.mp4", fps=16)
           log(f"[gen] DONE t={time.time()-t0:.0f}s size={os.path.getsize('/content/out.mp4')}")
           print("OUTPUT_FILE=/content/out.mp4", flush=True)
-          ''' % json.dumps(prompt)
+          ''' % (json.dumps(prompt), latent_frames)
           import textwrap
           if mode == "probe":
               open("run.py", "w").write(textwrap.dedent(probe))
@@ -260,12 +268,19 @@ jobs:
         run: |
           colab --auth adc download -s gen /content/out.mp4 out.mp4
           ls -la out.mp4
+      - name: extend to 10s (ping-pong loop)
+        if: ${{ github.event.inputs.mode != 'probe' }}
+        run: |
+          ffmpeg -y -i out.mp4 -vf reverse -an rev.mp4
+          ffmpeg -y -i out.mp4 -i rev.mp4 -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0" out-10s.mp4
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 out-10s.mp4
+          mv out-10s.mp4 final.mp4
       - name: upload artifact
         if: ${{ github.event.inputs.mode != 'probe' }}
         uses: actions/upload-artifact@v4
         with:
           name: video-output
-          path: out.mp4
+          path: final.mp4
       - name: teardown session
         if: always() && (github.event.inputs.mode == 'full' || github.event.inputs.mode == '')
         run: colab --auth adc stop -s gen || true
