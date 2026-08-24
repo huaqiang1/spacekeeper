@@ -240,12 +240,12 @@ jobs:
           if colab --auth adc ls -s gen 2>&1 | grep -q READY; then
             echo "session already alive, reusing"
           else
-            for i in 1 2 3 4; do
+            for i in 1 2 3 4 5 6 7 8; do
               echo "=== new attempt $i ==="
-              if colab --auth adc new -s gen --gpu T4; then
+              if timeout 300 colab --auth adc new -s gen --gpu T4; then
                 exit 0
               fi
-              sleep 120
+              sleep 240
             done
             exit 1
           fi
