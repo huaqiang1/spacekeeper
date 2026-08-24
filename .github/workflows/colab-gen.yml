@@ -194,7 +194,7 @@ jobs:
           for i, t in enumerate(tqdm(timesteps, desc="denoising")):
               latent_model_input = sch.scale_model_input(latents, t)
               with torch.no_grad():
-                  noise_pred = tr(hidden_states=latent_model_input, timestep=t, encoder_hidden_states=prompt_embeds).sample
+                  noise_pred = tr(hidden_states=latent_model_input, timestep=t.reshape(1), encoder_hidden_states=prompt_embeds).sample
               latents = sch.step(noise_pred, t, latents).prev_sample
               if (i+1) %% 5 == 0:
                   log(f"[gen] t={time.time()-t0:.0f}s step {i+1}/{len(timesteps)}, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
