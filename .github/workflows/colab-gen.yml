@@ -183,9 +183,7 @@ jobs:
           log(f"[gen] t={time.time()-t0:.0f}s neg embeds {neg_e.shape}")
           pos_e = enc(prompt_str)
           log(f"[gen] t={time.time()-t0:.0f}s pos embeds {pos_e.shape}")
-          prompt_embeds = torch.cat([neg_e, pos_e], dim=0)
-          del neg_e, pos_e
-          log(f"[gen] t={time.time()-t0:.0f}s prompt encoded, freeing text_encoder from gpu...")
+          prompt_embeds = pos_e
           del te
           gc.collect()
           torch.cuda.empty_cache()
@@ -196,23 +194,21 @@ jobs:
           log(f"[gen] t={time.time()-t0:.0f}s transformer on cuda, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
           log(f"[gen] t={time.time()-t0:.0f}s running denoising loop (20 steps, cfg={GUIDANCE})...")
           sch.set_timesteps(20)
-          latent_shape = (2, 16, %d, 48, 84)
+          latent_shape = (1, 16, %d, 48, 84)
           latents = torch.randn(latent_shape, dtype=torch.float16, device="cuda")
           latents = latents * sch.init_noise_sigma
           from tqdm.auto import tqdm
           timesteps = sch.timesteps
           for i, t in enumerate(tqdm(timesteps, desc="denoising")):
               latent_model_input = sch.scale_model_input(latents, t)
-              tt = t.reshape(1).expand(2).to("cuda")
+              tt = t.reshape(1).to("cuda")
               with torch.no_grad():
-                  noise_pred = tr(hidden_states=latent_model_input, timestep=tt, encoder_hidden_states=prompt_embeds).sample
-              n_u, n_c = noise_pred.float().chunk(2, dim=0)
-              guided = (n_u + GUIDANCE * (n_c - n_u)).half()
-              latents = sch.step(guided[0].float().cpu(), t, latents[0].float().cpu()).prev_sample.to("cuda", torch.float16)
-              latents = torch.cat([latents, latents], dim=0)
+                  n_c = tr(hidden_states=latent_model_input, timestep=tt, encoder_hidden_states=pos_e).sample
+                  n_u = tr(hidden_states=latent_model_input, timestep=tt, encoder_hidden_states=neg_e).sample
+              guided = (n_u.float() + GUIDANCE * (n_c.float() - n_u.float())).half()
+              latents = sch.step(guided.float().cpu(), t, latents.float().cpu()).prev_sample.to("cuda", torch.float16)
               if (i+1) %% 5 == 0:
                   log(f"[gen] t={time.time()-t0:.0f}s step {i+1}/{len(timesteps)} latent mean={latents[0].float().mean():.4f} std={latents[0].float().std():.4f} min={latents[0].float().min():.3f} max={latents[0].float().max():.3f}")
-          latents = latents[0]
           log(f"[gen] t={time.time()-t0:.0f}s final latent stats mean={latents.float().mean():.4f} std={latents.float().std():.4f}")
           log(f"[gen] t={time.time()-t0:.0f}s denoising done, freeing transformer...")
           del tr
