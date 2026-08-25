@@ -271,16 +271,20 @@ jobs:
       - name: extend to 10s (ping-pong loop)
         if: ${{ github.event.inputs.mode != 'probe' }}
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
           ffmpeg -y -i out.mp4 -vf reverse -an rev.mp4
           ffmpeg -y -i out.mp4 -i rev.mp4 -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0" out-10s.mp4
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 out-10s.mp4
           mv out-10s.mp4 final.mp4
       - name: upload artifact
-        if: ${{ github.event.inputs.mode != 'probe' }}
+        if: ${{ always() && github.event.inputs.mode != 'probe' }}
         uses: actions/upload-artifact@v4
         with:
           name: video-output
-          path: final.mp4
+          path: |
+            final.mp4
+            out.mp4
       - name: teardown session
         if: always() && (github.event.inputs.mode == 'full' || github.event.inputs.mode == '')
         run: colab --auth adc stop -s gen || true
