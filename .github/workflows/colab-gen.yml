@@ -214,22 +214,24 @@ jobs:
           del tr
           gc.collect()
           torch.cuda.empty_cache()
-          log(f"[gen] t={time.time()-t0:.0f}s transformer freed, moving vae to cuda...")
-          vae = vae.to("cuda")
-          gc.collect()
-          log(f"[gen] t={time.time()-t0:.0f}s vae on cuda, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          log(f"[gen] t={time.time()-t0:.0f}s transformer freed, moving vae fp32 to cuda...")
           if hasattr(vae, "enable_tiling"):
               vae.enable_tiling()
-          log(f"[gen] t={time.time()-t0:.0f}s decoding...")
-          latents_mean = torch.tensor(vae.config.latents_mean).view(1, vae.config.z_dim, 1, 1, 1).to(latents.device, vae.dtype)
-          latents_std = 1.0 / torch.tensor(vae.config.latents_std).view(1, vae.config.z_dim, 1, 1, 1).to(latents.device, vae.dtype)
-          latents_d = latents.to(vae.dtype) / latents_std + latents_mean
-          log(f"[gen] t={time.time()-t0:.0f}s denormed latents mean={latents_d.float().mean():.4f} std={latents_d.float().std():.4f}")
+          vae = vae.float().to("cuda")
+          gc.collect()
+          log(f"[gen] t={time.time()-t0:.0f}s vae fp32 on cuda, gpu={torch.cuda.memory_allocated()/1e9:.1f}GB")
+          latents_mean = torch.tensor(vae.config.latents_mean).view(1, vae.config.z_dim, 1, 1, 1).to(latents.device, torch.float32)
+          latents_std = 1.0 / torch.tensor(vae.config.latents_std).view(1, vae.config.z_dim, 1, 1, 1).to(latents.device, torch.float32)
+          latents_d = latents.float() / latents_std + latents_mean
+          log(f"[gen] t={time.time()-t0:.0f}s denormed latents mean={latents_d.mean():.4f} std={latents_d.std():.4f}")
           with torch.no_grad():
               decoded = vae.decode(latents_d).sample
-          log(f"[gen] t={time.time()-t0:.0f}s decoded shape={decoded.shape} min={decoded.float().min():.3f} max={decoded.float().max():.3f} mean={decoded.float().mean():.4f} std={decoded.float().std():.4f}")
-          images = ((decoded / 2 + 0.5).clamp(0, 1)[0]).permute(1, 2, 3, 0).float().cpu().numpy()
-          export_to_video(images, "/content/out.mp4", fps=16)
+          nan_count = torch.isnan(decoded).sum().item()
+          log(f"[gen] t={time.time()-t0:.0f}s decoded shape={decoded.shape} nan={nan_count} min={decoded.min():.3f} max={decoded.max():.3f} mean={decoded.mean():.4f} std={decoded.std():.4f}")
+          frames = ((decoded / 2 + 0.5).clamp(0, 1)[0]).permute(1, 2, 3, 0)
+          frames8 = (frames.float().cpu().numpy() * 255).round().astype("uint8")
+          log(f"[gen] t={time.time()-t0:.0f}s uint8 frames shape={frames8.shape} dtype={frames8.dtype} mean={frames8.mean():.1f} std={frames8.std():.1f} R/G/B mean={frames8[...,0].mean():.0f}/{frames8[...,1].mean():.0f}/{frames8[...,2].mean():.0f}")
+          export_to_video(frames8, "/content/out.mp4", fps=16)
           log(f"[gen] DONE t={time.time()-t0:.0f}s size={os.path.getsize('/content/out.mp4')}")
           print("OUTPUT_FILE=/content/out.mp4", flush=True)
           ''' % (json.dumps(prompt), latent_frames)
